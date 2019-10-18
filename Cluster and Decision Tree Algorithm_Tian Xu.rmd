@@ -1,0 +1,190 @@
+---
+title: "IST707 Cluster and Decision Tree Analysis"
+author: "Tian Xu"
+date: 'February 28, 2019 '
+output:
+  word_document
+  
+---
+*** 
+> # __Federalist Paper Mystery__
+
+### __K-means__ 
+#### *Data loading and Exploration*
+```{r eval=FALSE}
+install.packages("factoextra")
+library(factoextra)
+
+#Load dataset
+csvfile<-"~/Downloads/iSchool/Spring 2019/IST707/HW/HW2_Cluster/Disputed_Essay_data.csv"  
+dfDED<-read.csv("Disputed_Essay_data.csv")
+
+#Explore dataset
+str(dfDED)
+summary(dfDED)                                                                          
+View(dfDED)
+row.names(dfDED)
+
+#Delete the rows of Jay and HM
+dfDED1<-dfDED[-c(63:70), ]                                                              
+
+#Validate dataset
+summary(dfDED1)                                                                            
+
+#1-11 dispute 12-65 Hamilton  71-85 Madison
+table(dfDED1$author)                                                                       
+# dispt Hamilton       HM      Jay  Madison 
+#   11       51        0        0       15 
+
+
+#For better visualization, I assign name to dispt rows.
+rownames(dfDED1)[1]<-"dispt"                                                              
+rownames(dfDED1)[2]<-"dispt2"
+rownames(dfDED1)[3]<-"dispt3"
+rownames(dfDED1)[4]<-"dispt4"
+rownames(dfDED1)[5]<-"dispt5"
+rownames(dfDED1)[6]<-"dispt6"
+rownames(dfDED1)[7]<-"dispt7"
+rownames(dfDED1)[8]<-"dispt8"
+rownames(dfDED1)[9]<-"dispt9"
+rownames(dfDED1)[10]<-"dispt10"
+rownames(dfDED1)[11]<-"dispt11"
+
+dfDED1$author<-NULL
+dfDED1$filename<-NULL
+
+
+sum(!complete.cases(dfDED1))                                                                 #[1] 0
+df<-na.omit(dfDED1)
+```
+
+#### *Visualize Distance Function*
+
+```{r eval=FALSE}
+df<-scale(df, center = T, scale = T)                                                         #Scale the dataset
+distance<-get_dist(df, method = "euclidean")
+fviz_dist(distance, gradient = list(low="#00AFBB", mid="white",high="#FC4E07"))              #Visualize distance
+```
+
+#### *Use K-means to cluster dataset*
+
+```{r eval=FALSE}
+km<-kmeans(df, centers = 2, nstart = 25, iter.max = 100, algorithm = "Hartigan-Wong")       #2 centrois, Hartigan-Wong algorithm
+str(km)                                                                                     #Iteration at most 100
+library(knitr)
+kable(summary(km))
+```
+
+#### *Visualize K-means*
+
+```{r eval=FALSE}
+fviz_cluster(km, data = df)
+```
+
+
+#### K-means Conclusion
+Obviously, K-means tells us who is the author of disputed papers. Row 12-65 is Hamilton and row 71-85 is Madison. There are two clusters with two centrois
+to show where the disputed papers are. Every disputed paper belongs to the blue cluster that refers to Madison. WE can draw an insight that Madison is the author of disputed papers.
+
+***
+
+### __Hierarchical Clustering__
+
+```{r eval=FALSE}
+hac<-hclust(dist(df, method = "euclidean"), method = "complete")                           #Use complete linkage method to calculate 
+plot(hac)                                                                                  #maximum pairwise distance
+```
+
+#### *Output desirebale number of clusters after modeling*
+
+```{r eval=FALSE}
+hac_cut <- cutree(hac, 2)
+
+for (i in 1:length(hac_cut)){
+  if(hac_cut[i] != km$cluster[i]) print(names(hac_cut)[i])
+}
+```
+
+***
+
+### __Decision Tree__
+
+####  *Install packages that are used*
+
+```{r eval=FALSE}
+install.packages("CRAN")
+install.packages("rpart.plot")
+install.packages("e1071")
+install.packages("rattle")
+library(caret)
+library(rpart.plot)
+library(rpart)
+library(dplyr)
+library(e1071)
+library(rattle)
+```
+
+####  *Split dataset into train dataset and test dataset*
+
+For building decision tree model, we need split the dataset into two sperate datasets: training dataset and test dataset.
+Because our purpose is to find who is the author of the disputed papers. Thus, we can set Hamilton and Madison rows as 
+training dataset and disputed papers as testing dataset.
+
+```{r eval=FALSE}
+csvfile<-"~/Downloads/iSchool/Spring 2019/IST707/HW/HW2_Cluster/Disputed_Essay_data.csv"  #Load dataset
+dfDED2<-read.csv("Disputed_Essay_data.csv")
+tree<-dfDED2[-c(63:70), ]
+tree$author<-as.factor(as.character(tree$author))
+tree$filename<-NULL
+
+View(tree)
+
+train<-tree[which(tree$author=="Hamilton" | tree$author=="Madison"),]
+train$author<-as.factor(as.character(train$author))
+table(train$author)
+
+test<-tree[which(tree$author=="dispt"),]
+test$author<-as.factor(as.character(test$author))
+table(test$author)
+data<-rbind(train, test)
+```
+
+#### *Build model and Train model*
+
+After build the model, we can train the model and predict. We use "rpart" method to train. After prediction, we can see that the model 
+predicts Madison is the author. The percent of Madison author is 93.7% while the percent of Hamilton author is 6.3%.
+
+```{r eval=FALSE}
+rtree_fit<-train(author~., data=train, method="rpart", metric="Accuracy")
+
+typeof(rtree_fit)
+print(rtree_fit)
+names(rtree_fit)
+print(rtree_fit$finalModel)
+
+tree_predict<-predict(rtree_fit, newdata=test, na.action=na.omit, type="prob")
+head(tree_predict, 5)
+table(unlist(tree_predict,train$author))
+#0.0625 0.9375 
+#    11     11   
+```
+
+####  *Tune model*
+
+```{r eval=FALSE}
+rtree_fit_tune<-train(author~., data=train, method="rpart", metric="Accuracy", tuneLength=50)
+print(rtree_fit_tune$finalModel)
+
+rtree_fit_tune2<-train(author~., data = train, method="rpart", 
+                       tuneGrid=expand.grid(cp=seq(0,0.01,0.001)))
+print(rtree_fit_tune2$finalModel)
+
+fancyRpartPlot(rtree_fit_tune2$finalModel)
+prp(rtree_fit_tune2$finalModel)
+```
+
+### __Conclusion__
+From Clustering model to Decision Tree model, both of the results refer to Madison as the author of the 11 disputed papers. 
+Hope this is the answer of historical mystery. However, in this case, we only consider Bag of Words. There could be other aspects 
+we can consider. For example, systax, semicolon, length of sentences are all possible aspects to find the answer. But, in this case, 
+the result is strong enough to answer the question: Madison is the author of disputed papers.
